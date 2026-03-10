@@ -1,0 +1,63 @@
+services:
+  dind:
+    image: docker:27-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""   # TLS disabled — internal network only
+    volumes:
+      - dind-storage:/var/lib/docker
+    networks:
+      - runner-net
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  runner:
+    build: .
+    environment:
+      DOCKER_HOST: tcp://dind:2375
+      GITHUB_PAT: ${GITHUB_PAT}
+      GITHUB_ORG: ${GITHUB_ORG:-NullRabbitLabs}
+      RUNNER_NAME: ${RUNNER_NAME:-}
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,linux,x64,nullrabbit}
+      RUNNER_GROUP: ${RUNNER_GROUP:-default}
+    volumes:
+      # Per-instance (isolated)
+      - runner-work:/home/runner/_work
+      # Shared dependency caches
+      - shared-cargo-registry:/home/runner/.cargo/registry
+      - shared-cargo-git:/home/runner/.cargo/git
+      - shared-go-mod:/home/runner/go/pkg/mod
+      - shared-go-build:/home/runner/.cache/go-build
+      - shared-npm-cache:/home/runner/.npm
+    networks:
+      - runner-net
+    depends_on:
+      dind:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  runner-net:
+    driver: bridge
+
+volumes:
+  # Per-instance volumes (managed by compose)
+  dind-storage:
+  runner-work:
+
+  # Shared cache volumes (pre-created with `docker volume create`)
+  shared-cargo-registry:
+    external: true
+  shared-cargo-git:
+    external: true
+  shared-go-mod:
+    external: true
+  shared-go-build:
+    external: true
+  shared-npm-cache:
+    external: true
